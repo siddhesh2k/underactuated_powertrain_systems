@@ -101,6 +101,56 @@ MATLAB (`addpath(genpath('.'))` first), for each architecture:
 The setup scripts save their controller variables across the parameter file's
 `clear` so that the models can be run immediately after setup.
 
+## Robustness to parameter drift
+
+The paper reports a parameter-drift study on the nonlinear plant: each
+architecture is run nominally and then with one perturbed parameter per
+subsystem, one at a time, so that any degradation can be attributed to a
+specific mechanism. Two parameters are perturbed.
+
+**Battery internal resistance, `R` (`R+50%`).** Internal resistance grows with
+cycling and temperature over a pack's life. This perturbation raises the series
+resistance by 50%. It acts on the battery (SOC) side. It is applied inside the
+Simulink model, at the `R0` (series resistance) parameter of the Equivalent
+Circuit Battery block. A 50% increase leaves every channel of every architecture
+essentially unchanged (SOC RMS moves by under 1.5%), because the SOC-channel gain
+is set by pack capacity through `G1`, not by series resistance. This
+insensitivity is a property of the plant, not of any controller.
+
+**Fuel-cell active cell count, `N_cell` (`N_cell-5`).** A stack can lose active
+cells over life through flooding, membrane failure, or bypassed cells. `N_cell`
+is the number of fuel cells in the stack, the multiplicative gain on stack
+voltage in the Nernst relation, nominally 436. It is applied inside the Simulink
+model, in the innermost PEMFC voltage function block where the cell count
+multiplies the stack voltage. Removing cells lowers stack voltage at a given
+power, which requires higher current and therefore more hydrogen per unit output.
+It acts on the hydrogen (`G2`) channel and is one-directional (degradation only).
+Removing five cells, a change of roughly one percent, degrades every architecture
+on the hydrogen channel while SOC tracking stays close to nominal.
+
+A key observation: SOC degrades under the `N_cell` perturbation even though the
+perturbation does not touch `G1`. Because `Pbat = Pdem - Pfc`, a `G2`
+perturbation propagates into the SOC channel through the shared single actuator.
+The rank-1 structure that forbids independent tracking of the two outputs also
+forbids perturbing them independently; this is the same exchange-rate coupling
+seen in the nominal results, now acting in the uncertainty direction.
+
+### Reproducing the perturbed cases
+
+Both perturbations are applied inside the Simulink model (not in the parameter
+`.m` file). For each architecture, open its `.slx`, make one change, and re-run
+the three-step procedure above:
+
+- **`R+50%`:** in the Equivalent Circuit Battery block, multiply the series
+  resistance `R0` by 1.5.
+- **`N_cell-5`:** in the innermost PEMFC voltage function block, change the fuel
+  cell count from 436 to 431 (remove five cells).
+
+Run each architecture nominally first to confirm the harness, then apply one
+perturbation at a time. The reported degradation is an upper bound on each
+controller's contribution, since a degraded stack cannot meet the cycle demand
+at the nominal hydrogen cost.
+
 ## Repository layout
 
 ```
